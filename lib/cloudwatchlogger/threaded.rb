@@ -1,5 +1,6 @@
 require 'aws-sdk-cloudwatchlogs'
 require 'thread'
+require 'busted'
 
 module CloudWatchLogger
   class DeliveryThreadManager
@@ -44,9 +45,10 @@ module CloudWatchLogger
 
   class DeliveryThread < Thread
     def initialize(credentials, log_group_name, log_stream_name, queue, opts = {})
+      Busted.start
       opts[:open_timeout] = opts[:open_timeout] || 120
       opts[:read_timeout] = opts[:read_timeout] || 120
-      @max_queue_size = opts.delete(:max_queue) || 10
+      @max_queue_size = opts.delete(:max_queue) || 25
       @credentials = credentials
       @log_group_name = log_group_name
       @log_stream_name = log_stream_name
@@ -89,6 +91,7 @@ module CloudWatchLogger
       end
 
       at_exit do
+        @queue.push(Busted.finish)
         exit!
         join
       end
@@ -108,7 +111,7 @@ module CloudWatchLogger
     def connect!(opts = {})
       args = { http_open_timeout: opts[:open_timeout], http_read_timeout: opts[:read_timeout] }
       args[:region] = @opts[:region] if @opts[:region]
-      args.merge( @credentials.key?(:access_key_id) ? { access_key_id: @credentials[:access_key_id], secret_access_key: @credentials[:secret_access_key] } : {} )
+      args.merge!( @credentials.key?(:access_key_id) ? { access_key_id: @credentials[:access_key_id], secret_access_key: @credentials[:secret_access_key] } : {} )
 
       @client = Aws::CloudWatchLogs::Client.new(args)
       begin
