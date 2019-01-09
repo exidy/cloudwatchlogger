@@ -1,19 +1,22 @@
-require 'multi_json'
 require 'socket'
-require 'uuid'
 require 'cloudwatchlogger/threaded'
 
 module CloudWatchLogger
   class Client
     attr_reader :input_uri, :deliverer
 
-    def initialize(credentials, log_group_name, log_stream_name = nil, opts = {})
+    def initialize(credentials, log_group_name, log_stream_name, opts = {})
       unless log_group_name
         raise LogGroupNameRequired, 'log_group_name is required'
       end
+
+      unless log_stream_name
+        raise LogStreamNameRequired, 'log_stream_name is required'
+      end
+
       @credentials = credentials
       @log_group_name = log_group_name
-      @log_stream_name = log_stream_name || default_log_stream_name
+      @log_stream_name = log_stream_name
       @deliverer = CloudWatchLogger::DeliveryThreadManager.new(@credentials, @log_group_name, @log_stream_name, opts)
     end
 
@@ -23,6 +26,32 @@ module CloudWatchLogger
 
     def close
       nil
+    end
+
+    def formatter
+      proc do |severity, datetime, progname, msg|
+        processid = Process.pid
+        host = Socket.gethostname.gsub(/(\.curb\.verifonets\.com)|(#{@log_stream_name})-/, "")
+        massage_message(msg, severity, processid, host)
+      end
+    end
+
+    private
+
+    def massage_message(incoming_message, severity, processid, host)
+      outgoing_message = ''
+
+      outgoing_message << "server=#{host}, pid=#{processid}, severity=#{severity}, "
+
+      outgoing_message << case incoming_message
+      when Hash
+        masher(incoming_message)
+      when String
+        incoming_message
+      else
+        incoming_message.inspect
+      end
+      outgoing_message
     end
 
     def masherize_key(prefix, key)
@@ -42,42 +71,6 @@ module CloudWatchLogger
           end
         end
       end.join(', ')
-    end
-
-    def formatter
-      proc do |severity, datetime, progname, msg|
-        processid = Process.pid
-        host = Socket.gethostname.gsub(/(\.curb\.verifonets\.com)|(#{@log_stream_name})-/, "")
-        if @format == :json && msg.is_a?(Hash)
-          MultiJson.dump(msg.merge(severity: severity,
-           progname: progname,
-           pid: processid,
-           server: host))
-        else
-          massage_message(msg, severity, processid, host)
-        end
-      end
-    end
-
-    def massage_message(incoming_message, severity, processid, host)
-      outgoing_message = ''
-
-      outgoing_message << "server=#{host}, pid=#{processid}, severity=#{severity}, "
-
-      outgoing_message << case incoming_message
-      when Hash
-        masher(incoming_message)
-      when String
-        incoming_message
-      else
-        incoming_message.inspect
-      end
-      outgoing_message
-    end
-
-    def default_log_stream_name
-      uuid = UUID.new
-      @log_stream_name ||= "#{Socket.gethostname}-#{uuid.generate}"
     end
   end
 end
