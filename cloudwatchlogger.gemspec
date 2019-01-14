@@ -22,4 +22,6 @@ Gem::Specification.new do |s|
   s.required_rubygems_version = '>= 1.3.6'
 
   s.add_runtime_dependency 'aws-sdk-cloudwatchlogs', '~> 1'
+  s.add_development_dependency 'rspec'
+  s.add_development_dependency 'byebug'
 end
